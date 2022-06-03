@@ -1,0 +1,10 @@
+/.vscode/
+/.idea
+/tmp/
+
+.env
+.env.testing
+.phpunit.result.cache
+
+/logs/*
+/data/*

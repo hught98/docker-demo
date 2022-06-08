@@ -1,25 +1,6 @@
 version: '3'
 
 services:
-  ### MariaDB ##############################################
-  mariadb:
-    build:
-      context: ./mariadb
-    volumes:
-      - ${DATA_PATH_HOST}/mariadb:/var/lib/mysql
-      - ./mariadb/docker-entrypoint-initdb.d:/docker-entrypoint-initdb.d
-    ports:
-      - "${MARIADB_PORT}:3306"
-    environment:
-      - TZ=UTC
-      - MYSQL_DATABASE=default
-      - MYSQL_USER=default
-      - MYSQL_PASSWORD=secret
-      - MYSQL_ROOT_PASSWORD=root
-    networks:
-      - app-network
-    restart: always
-
   ### MySQL ##############################################
   mysql:
     image: mysql:8.0
@@ -35,7 +16,7 @@ services:
       - db:/var/lib/mysql
       - ./mysql/docker-entrypoint-initdb.d:/docker-entrypoint-initdb.d
     networks:
-      - app-network
+      - backend
 
 ### Redis ##################################################
   redis:
@@ -45,7 +26,7 @@ services:
     ports:
       - "${REDIS_PORT}:6379"
     networks:
-      - app-network
+      - backend
     restart: always
 
   redis-webui:
@@ -57,19 +38,92 @@ services:
       - REDIS_1_HOST=${REDIS_WEBUI_CONNECT_HOST}
       - REDIS_1_PORT=${REDIS_WEBUI_CONNECT_PORT}
     networks:
-      - app-network
+      - backend
     ports:
       - "${REDIS_WEBUI_PORT}:80"
     depends_on:
       - redis
     restart: always
+  elasticsearch:
+    container_name: es-container-demo
+    image: docker.elastic.co/elasticsearch/elasticsearch:7.11.0
+    environment:
+      - xpack.security.enabled=false
+      - "discovery.type=single-node"
+      - bootstrap.memory_lock=false
+      - "ES_JAVA_OPTS=-Xms2g -Xmx2g"
+    networks:
+      - backend
+      - gateway
+    ports:
+      - 9201:9200
+  kibana:
+    container_name: kb-container-demo
+    image: docker.elastic.co/kibana/kibana:7.11.0
+    links:
+      - elasticsearch
+    networks:
+      - backend
+    depends_on:
+      - elasticsearch
+    ports:
+      - 5602:5601
+
+    ### Storage ##############################################
+  minio:
+    image: minio/minio:latest
+    volumes:
+      - ${DATA_PATH_HOST}/minio:/data
+    ports:
+      - "${MINO_PORT}:9000"
+    command: server /data
+    environment:
+      MINIO_ROOT_USER: minio
+      MINIO_ROOT_PASSWORD: minio123
+    networks:
+      - backend
+    restart: always
+
+  minio-client:
+    image: minio/mc:latest
+    entrypoint: >
+      /bin/sh -c "
+      until (/usr/bin/mc config host add myminio http://minio:9000 minio minio123) do echo '...waiting...' && sleep 1; done;
+      /usr/bin/mc mb myminio/trace;
+      exit 0;
+      "
+    networks:
+      - backend
+    depends_on:
+      - minio
+    restart: always
+  reverse-proxy:
+    build:
+      context: ./reverse-proxy
+    # Enables the web UI and tells Traefik to listen to docker
+    command: --api.insecure=true --providers.docker
+    ports:
+      # The HTTP port
+      - "${TREAFIK_HTTP_PORT}:80"
+      # The Web UI (enabled by --api.insecure=true)
+      - "${TREAFIK_WEBUI_PORT}:8080"
+    privileged: true
+    volumes:
+      - ./reverse-proxy/traefik.toml:/etc/traefik/traefik.toml
+      # So that Traefik can listen to the Docker events
+      - /var/run/docker.sock:/var/run/docker.sock
+    networks:
+      - gateway
+    restart: always
 
 #Docker Networks
 networks:
-  app-network:
-    name: docker-api
+  backend:
+    name: docker-demo-backend
     driver: bridge
-
+  gateway:
+    name: docker-demo-gateway
+    driver: bridge
 #Docker Volumes
 volumes:
   db:

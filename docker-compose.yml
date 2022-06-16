@@ -4,6 +4,7 @@ services:
   ### MySQL ##############################################
   mysql:
     image: mysql:8.0
+    platform: linux/x86_64
     cap_add:
       - SYS_NICE
     restart: always
@@ -60,8 +61,6 @@ services:
   kibana:
     container_name: kb-container-demo
     image: docker.elastic.co/kibana/kibana:7.11.0
-    links:
-      - elasticsearch
     networks:
       - backend
     depends_on:
@@ -72,6 +71,7 @@ services:
     ### Storage ##############################################
   minio:
     image: minio/minio:latest
+    platform: linux/x86_64
     volumes:
       - ${DATA_PATH_HOST}/minio:/data
     ports:
@@ -86,9 +86,10 @@ services:
 
   minio-client:
     image: minio/mc:latest
+    platform: linux/arm64
     entrypoint: >
       /bin/sh -c "
-      until (/usr/bin/mc config host add myminio http://minio:9000 minio minio123) do echo '...waiting...' && sleep 1; done;
+      until (/usr/bin/mc config host add myminio http://minio:${MINO_PORT} minio minio123) do echo '...waiting...' && sleep 1; done;
       /usr/bin/mc mb myminio/trace;
       exit 0;
       "
